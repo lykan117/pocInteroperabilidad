@@ -92,6 +92,7 @@ public class CuentaRoute extends RouteBuilder {
                 .to("direct:dlq")
                 .end();
 
+
         rest("/cuenta")
                 .post()
                 .type(CuentaDTO.class)
