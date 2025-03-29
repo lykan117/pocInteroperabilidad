@@ -9,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.rmi.ConnectException;
+
 @Component
 public class CuentaRoute extends RouteBuilder {
 
@@ -17,27 +19,29 @@ public class CuentaRoute extends RouteBuilder {
     @Override
     public void configure() {
 
-        errorHandler(defaultErrorHandler()
-                .maximumRedeliveries(3)
-                .redeliveryDelay(3000)
-                .retryAttemptedLogLevel(LoggingLevel.WARN)
-                .onRedelivery(exchange -> {
-                    int counter = exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) != null ?
-                            exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) + 1 : 1;
-                    log.warn("🔁 Reintentando operación... intento {}", counter);
-                })
-        );
+//        errorHandler(defaultErrorHandler()
+//                .maximumRedeliveries(3)
+//                .redeliveryDelay(3000)
+//                .retryAttemptedLogLevel(LoggingLevel.WARN)
+//                .onRedelivery(exchange -> {
+//                    int counter = exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) != null ?
+//                            exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) + 1 : 1;
+//                    log.warn("🔁 Reintentando operación... intento {}", counter);
+//                })
+//        );
 
         onException(Exception.class)
                 .maximumRedeliveries(3)
                 .redeliveryDelay(3000)
-                .retryAttemptedLogLevel(LoggingLevel.WARN)
+                .onRedelivery(exchange -> {
+                    int counter = exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) != null ?
+                            exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) + 1 : 1;
+                    log.warn("🔁 Reintentando operación... intento {}", counter);
+
+                })
                 .handled(true)
                 .log("🚨 Error capturado: ${exception.message}")
                 .to("direct:dlq");
-
-
-
 
         restConfiguration()
                 .contextPath("/api")
@@ -105,10 +109,11 @@ public class CuentaRoute extends RouteBuilder {
                 .setHeader("Content-Type", constant("application/json"))
                 .setHeader("Accept", constant("application/json"))
                 .marshal().json(JsonLibrary.Jackson)
-                .to("http://localhost:8080/cuentas?bridgeEndpoint=true")
+                .to("http://localhost:8080/cuentas?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
                 .convertBodyTo(String.class)
                 .to("direct:eventBus")
                 .to("direct:exito");
+
 
         from("direct:leerTodas")
                 .log("📥 [Leer todas]")
@@ -123,7 +128,7 @@ public class CuentaRoute extends RouteBuilder {
                 .convertBodyTo(String.class)
                 .to("direct:eventBus")
                 .to("direct:exito");
-        
+
         from("direct:actualizarCuenta")
                 .log("📥 [Actualizar] ${body}")
                 .setHeader("Content-Type", constant("application/json"))
