@@ -17,7 +17,6 @@ public class CuentaRoute extends RouteBuilder {
     @Override
     public void configure() {
 
-        // 🔧 Global error handler con reintentos automáticos
         errorHandler(defaultErrorHandler()
                 .maximumRedeliveries(3)
                 .redeliveryDelay(3000)
@@ -28,6 +27,17 @@ public class CuentaRoute extends RouteBuilder {
                     log.warn("🔁 Reintentando operación... intento {}", counter);
                 })
         );
+
+        onException(Exception.class)
+                .maximumRedeliveries(3)
+                .redeliveryDelay(3000)
+                .retryAttemptedLogLevel(LoggingLevel.WARN)
+                .handled(true)
+                .log("🚨 Error capturado: ${exception.message}")
+                .to("direct:dlq");
+
+
+
 
         restConfiguration()
                 .contextPath("/api")
@@ -65,7 +75,6 @@ public class CuentaRoute extends RouteBuilder {
         from("direct:procesarCuenta")
                 .routeId("orquestadorCuenta")
                 .log("📥 Mensaje recibido: ${body}")
-                .doTry()
                 .log("🌐 Llamando al CRUD externo...")
                 .setHeader(Exchange.HTTP_METHOD, constant("POST"))
                 .setHeader("Content-Type", constant("application/json"))
@@ -74,12 +83,8 @@ public class CuentaRoute extends RouteBuilder {
                 .to("http://localhost:8080/cuentas?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
                 .log("✅ Llamada exitosa al CRUD")
                 .to("direct:eventBus")
-                .to("direct:exito")
-                .doCatch(Exception.class)
-                .log("⚠️ Error llamando al CRUD: ${exception.message}")
-                .to("direct:error")
-                .to("direct:dlq")
-                .end();
+                .to("direct:exito");
+
 
         rest("/cuenta")
                 .post()
@@ -114,15 +119,11 @@ public class CuentaRoute extends RouteBuilder {
         from("direct:leerUna")
                 .routeId("leerCuenta")
                 .log("📥 [Leer una] númeroCuenta = ${header.numeroCuenta}")
-                .doTry()
                 .toD("http://localhost:8080/cuentas/${header.numeroCuenta}?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
                 .convertBodyTo(String.class)
                 .to("direct:eventBus")
-                .doCatch(Exception.class)
-                .log("🚨 Error capturado al leer cuenta: ${exception.message}")
-                .to("direct:dlq")
-                .end();
-
+                .to("direct:exito");
+        
         from("direct:actualizarCuenta")
                 .log("📥 [Actualizar] ${body}")
                 .setHeader("Content-Type", constant("application/json"))
