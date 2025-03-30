@@ -2,14 +2,12 @@ package com.interoperabilidad.Orquest.routes;
 
 import com.interoperabilidad.Orquest.dto.CuentaDTO;
 import org.apache.camel.Exchange;
-import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.rmi.ConnectException;
 
 @Component
 public class CuentaRoute extends RouteBuilder {
@@ -19,16 +17,22 @@ public class CuentaRoute extends RouteBuilder {
     @Override
     public void configure() {
 
-//        errorHandler(defaultErrorHandler()
-//                .maximumRedeliveries(3)
-//                .redeliveryDelay(3000)
-//                .retryAttemptedLogLevel(LoggingLevel.WARN)
-//                .onRedelivery(exchange -> {
-//                    int counter = exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) != null ?
-//                            exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) + 1 : 1;
-//                    log.warn("🔁 Reintentando operación... intento {}", counter);
-//                })
-//        );
+/*
+        errorHandler(defaultErrorHandler()
+                .maximumRedeliveries(3)
+                .redeliveryDelay(3000)
+                .retryAttemptedLogLevel(LoggingLevel.WARN)
+                .onRedelivery(exchange -> {
+                    int counter = exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) != null ?
+                            exchange.getIn().getHeader(Exchange.REDELIVERY_COUNTER, Integer.class) + 1 : 1;
+                    log.warn("🔁 Reintentando operación... intento {}", counter);
+                })
+        );*/
+
+        restConfiguration()
+                .contextPath("/api")
+                .port(8081)
+                .bindingMode(org.apache.camel.model.rest.RestBindingMode.json);
 
         onException(Exception.class)
                 .maximumRedeliveries(3)
@@ -43,10 +47,7 @@ public class CuentaRoute extends RouteBuilder {
                 .log("🚨 Error capturado: ${exception.message}")
                 .to("direct:dlq");
 
-        restConfiguration()
-                .contextPath("/api")
-                .port(8081)
-                .bindingMode(org.apache.camel.model.rest.RestBindingMode.json);
+
 
         from("direct:dlq")
                 .log("📦 DLQ: ${body}")
@@ -71,39 +72,48 @@ public class CuentaRoute extends RouteBuilder {
         from("direct:error")
                 .log("❌ Evento de error: ${body}");
 
-        rest("/procesarCuenta")
-                .post()
-                .consumes("application/json")
-                .to("direct:procesarCuenta");
+//        rest("/procesarCuenta")
+//                .post()
+//                .consumes("application/json")
+//                .to("direct:procesarCuenta");
+//
+//        from("direct:procesarCuenta")
+//                .routeId("orquestadorCuenta")
+//                .log("📥 Mensaje recibido: ${body}")
+//                .log("🌐 Llamando al CRUD externo...")
+//                .setHeader(Exchange.HTTP_METHOD, constant("POST"))
+//                .setHeader("Content-Type", constant("application/json"))
+//                .setHeader("Accept", constant("application/json"))
+//                .marshal().json(JsonLibrary.Jackson)
+//                .to("http://localhost:8080/cuentas?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
+//                .log("✅ Llamada exitosa al CRUD")
+//                .to("direct:eventBus")
+//                .to("direct:exito");
 
-        from("direct:procesarCuenta")
-                .routeId("orquestadorCuenta")
-                .log("📥 Mensaje recibido: ${body}")
-                .log("🌐 Llamando al CRUD externo...")
-                .setHeader(Exchange.HTTP_METHOD, constant("POST"))
-                .setHeader("Content-Type", constant("application/json"))
-                .setHeader("Accept", constant("application/json"))
-                .marshal().json(JsonLibrary.Jackson)
-                .to("http://localhost:8080/cuentas?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
-                .log("✅ Llamada exitosa al CRUD")
-                .to("direct:eventBus")
-                .to("direct:exito");
-
-
+//oruqestador principal
         rest("/cuenta")
                 .post()
                 .type(CuentaDTO.class)
                 .to("direct:crearCuenta")
                 .get()
-                .to("direct:leerTodas")
+                .to("direct:leerCta")
                 .get("/{numeroCuenta}")
-                .to("direct:leerUna")
+                .to("direct:LeerUna")
                 .put("/{numeroCuenta}")
                 .type(CuentaDTO.class)
                 .to("direct:actualizarCuenta")
                 .delete("/{numeroCuenta}")
                 .to("direct:eliminarCuenta");
 
+//        from("direct:crearCuenta")
+//                .log("📥 [Crear] ${body}")
+//                .setHeader("Content-Type", constant("application/json"))
+//                .setHeader("Accept", constant("application/json"))
+//                .marshal().json(JsonLibrary.Jackson)
+//                .to("http://localhost:8080/cuentas?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
+//                .convertBodyTo(String.class)
+//                .to("direct:eventBus")
+//                .to("direct:exito");
         from("direct:crearCuenta")
                 .log("📥 [Crear] ${body}")
                 .setHeader("Content-Type", constant("application/json"))
@@ -112,16 +122,17 @@ public class CuentaRoute extends RouteBuilder {
                 .to("http://localhost:8080/cuentas?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
                 .convertBodyTo(String.class)
                 .to("direct:eventBus")
-                .to("direct:exito");
+                .to("direct:exito")
+                .setBody(simple("${body}")); // <-- esta línea hace que regrese el body al cliente
 
 
-        from("direct:leerTodas")
+        from("direct:leerCta")
                 .log("📥 [Leer todas]")
                 .to("http://localhost:8080/cuentas?bridgeEndpoint=true&httpMethod=GET")
                 .convertBodyTo(String.class)
                 .to("direct:eventBus");
 
-        from("direct:leerUna")
+        from("direct:LeerUna")
                 .routeId("leerCuenta")
                 .log("📥 [Leer una] númeroCuenta = ${header.numeroCuenta}")
                 .toD("http://localhost:8080/cuentas/${header.numeroCuenta}?bridgeEndpoint=true&throwExceptionOnFailure=true&connectTimeout=2000&socketTimeout=2000")
